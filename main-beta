@@ -1,0 +1,932 @@
+import React, { useState, useEffect } from 'react';
+import { Mic, Check, X, ChevronRight, Plus, Target, Moon, Sun, Menu } from 'lucide-react';
+
+// ============================================================================
+// STORAGE UTILITIES
+// ============================================================================
+const storage = {
+  async get(key) {
+    try {
+      const result = await window.storage.get(key);
+      return result ? JSON.parse(result.value) : null;
+    } catch (error) {
+      return null;
+    }
+  },
+  async set(key, value) {
+    try {
+      await window.storage.set(key, JSON.stringify(value));
+      return true;
+    } catch (error) {
+      console.error('Storage error:', error);
+      return false;
+    }
+  }
+};
+
+// ============================================================================
+// DATA MODELS
+// ============================================================================
+const SEASONS = [
+  { id: 'health', name: 'Health Stabilization', desc: 'Body first. Everything else adjusts.' },
+  { id: 'financial', name: 'Financial Security', desc: 'Building the base so everything else is possible.' },
+  { id: 'creative', name: 'Creative Output', desc: 'Making the work that matters.' },
+  { id: 'relationships', name: 'Relationships & Belonging', desc: 'Reconnecting, repairing, deepening.' },
+  { id: 'environment', name: 'Environment & Home', desc: 'Creating space that holds you.' },
+  { id: 'identity', name: 'Identity & Confidence', desc: 'Becoming who you said you'd be.' }
+];
+
+const AM_STEPS = [
+  { name: 'Neural Stillness', desc: '2 minutes of breathwork', instructions: 'Sit. Close your eyes. Breathe in for 4, hold for 4, out for 6.' },
+  { name: 'Identity Architecture', desc: 'Recall your compass', instructions: 'Remember who you are becoming.' },
+  { name: 'Bio-Activation', desc: 'Gentle movement', instructions: 'Stand. Stretch. Move your body.' },
+  { name: 'Conscious Input', desc: 'Set intention', instructions: 'What matters most today?' },
+  { name: 'Reality Mapping', desc: 'Preview the day', instructions: 'What are the constraints? What needs protection?' }
+];
+
+const PM_STEPS = [
+  { name: 'Sensory Closure', desc: 'Settle your space', instructions: 'Dim lights. Put phone away. Create quiet.' },
+  { name: 'Somatic Release', desc: 'Release tension', instructions: 'Stretch. Body scan. Let it rest.' },
+  { name: 'Emotional Integration', desc: 'Process the day', instructions: 'What did you feel? What needs forgiveness?' },
+  { name: 'Cognitive Clearing', desc: 'Empty your mind', instructions: 'Write down anything still open.' },
+  { name: 'Cellular Repair', desc: 'Prepare for rest', instructions: 'Breathe slowly. Express gratitude.' }
+];
+
+// ============================================================================
+// MAIN APP
+// ============================================================================
+export default function SOEHAApp() {
+  const [loading, setLoading] = useState(true);
+  const [screen, setScreen] = useState('loading');
+  const [user, setUser] = useState(null);
+  const [goals, setGoals] = useState(['', '', '']);
+  const [dailyRecord, setDailyRecord] = useState(null);
+  const [offloads, setOffloads] = useState([]);
+  
+  // Onboarding state
+  const [name, setName] = useState('');
+  const [season, setSeason] = useState(null);
+  const [amRitual, setAmRitual] = useState('balanced');
+  const [pmRitual, setPmRitual] = useState('thorough');
+  
+  // Daily state
+  const [amCheckIn, setAmCheckIn] = useState({ mood: null, capacity: null, time: 15 });
+  const [currentStep, setCurrentStep] = useState(0);
+  const [focus, setFocus] = useState(null);
+  const [pmCheckIn, setPmCheckIn] = useState({ completed: null, friction: null, feeling: null });
+  
+  // UI state
+  const [tab, setTab] = useState('today');
+  const [offloadText, setOffloadText] = useState('');
+  const [showInstructions, setShowInstructions] = useState(false);
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    const userData = await storage.get('user');
+    const goalsData = await storage.get('goals');
+    const today = new Date().toISOString().split('T')[0];
+    const todayRecord = await storage.get(`daily_${today}`);
+    const offloadData = await storage.get('offloads');
+    
+    if (userData) {
+      setUser(userData);
+      setName(userData.name);
+      setSeason(userData.season);
+      setAmRitual(userData.amRitual);
+      setPmRitual(userData.pmRitual);
+      
+      if (goalsData) setGoals(goalsData);
+      if (todayRecord) {
+        setDailyRecord(todayRecord);
+        setFocus(todayRecord.focus);
+        if (todayRecord.pmCompleted) setScreen('sealed');
+        else if (todayRecord.amCompleted) setScreen('today');
+        else setScreen('today');
+      } else {
+        setScreen('today');
+      }
+      if (offloadData) setOffloads(offloadData);
+    } else {
+      setScreen('welcome');
+    }
+    setLoading(false);
+  };
+
+  const saveUser = async (userData) => {
+    await storage.set('user', userData);
+    setUser(userData);
+  };
+
+  const saveDaily = async (record) => {
+    const today = new Date().toISOString().split('T')[0];
+    await storage.set(`daily_${today}`, record);
+    setDailyRecord(record);
+  };
+
+  const generateFocus = () => {
+    const activeGoals = goals.filter(g => g.trim());
+    if (!activeGoals.length) return null;
+    
+    const goalIndex = new Date().getDate() % activeGoals.length;
+    const goal = activeGoals[goalIndex];
+    
+    return {
+      goal,
+      action: amCheckIn.capacity === 'low' ? `Take one small step: ${goal}` : `Make progress on: ${goal}`,
+      floor: amCheckIn.capacity === 'low' ? '5 minutes' : '15 minutes',
+      full: amCheckIn.capacity === 'high' ? '30+ minutes' : '20 minutes'
+    };
+  };
+
+  const addOffload = async (text) => {
+    const newOffload = {
+      id: Date.now(),
+      text,
+      timestamp: new Date().toISOString()
+    };
+    const updated = [newOffload, ...offloads];
+    await storage.set('offloads', updated);
+    setOffloads(updated);
+    setOffloadText('');
+  };
+
+  // ============================================================================
+  // RENDER SCREENS
+  // ============================================================================
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-3xl font-bold mb-2">SOEHA</div>
+          <div className="text-gray-400 text-sm">Loading...</div>
+        </div>
+      </div>
+    );
+  }
+
+  // ONBOARDING
+  if (screen === 'welcome') {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-amber-50 to-white flex items-center justify-center p-8">
+        <div className="max-w-md w-full text-center space-y-8">
+          <div className="space-y-4">
+            <h1 className="text-4xl font-bold">SOEHA</h1>
+            <p className="text-xl text-gray-600">What comes after productivity.</p>
+            <p className="text-gray-700">A home system for follow-through—without the productivity vibe.</p>
+          </div>
+          <button onClick={() => setScreen('philosophy')} className="w-full bg-black text-white py-4 rounded-xl font-semibold">Continue</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === 'philosophy') {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center p-8">
+        <div className="max-w-md w-full space-y-8">
+          <div className="space-y-6 text-center">
+            <p className="text-xl font-semibold">You don't have a motivation problem.</p>
+            <p className="text-xl font-semibold">You have an environment problem.</p>
+            <div className="pt-4 space-y-4 text-gray-700">
+              <p>Your goals live inside the same device that interrupts you 247 times a day.</p>
+              <p>SOEHA is different.</p>
+              <p>It protects two moments—morning and evening—so the one thing that matters actually gets finished.</p>
+            </div>
+          </div>
+          <button onClick={() => setScreen('season')} className="w-full bg-black text-white py-4 rounded-xl font-semibold">I'm ready</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === 'season') {
+    return (
+      <div className="min-h-screen bg-white p-6">
+        <div className="max-w-md mx-auto space-y-6">
+          <h2 className="text-2xl font-bold">Right now, which season are you really in?</h2>
+          <div className="space-y-3">
+            {SEASONS.map(s => (
+              <button key={s.id} onClick={() => setSeason(s.id)} className={`w-full p-4 rounded-xl text-left ${season === s.id ? 'bg-black text-white' : 'bg-gray-50 hover:bg-gray-100'}`}>
+                <div className="font-semibold">{s.name}</div>
+                <div className={`text-sm ${season === s.id ? 'text-gray-300' : 'text-gray-600'}`}>{s.desc}</div>
+              </button>
+            ))}
+          </div>
+          {season && <button onClick={() => setScreen('goals')} className="w-full bg-black text-white py-4 rounded-xl font-semibold">Continue</button>}
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === 'goals') {
+    return (
+      <div className="min-h-screen bg-white p-6">
+        <div className="max-w-md mx-auto space-y-6">
+          <div>
+            <h2 className="text-2xl font-bold mb-2">What matters most right now?</h2>
+            <p className="text-gray-600">List 3-10 goals. Not tasks—intentions.</p>
+          </div>
+          <div className="space-y-3">
+            {goals.map((g, i) => (
+              <input key={i} value={g} onChange={(e) => { const n = [...goals]; n[i] = e.target.value; setGoals(n); }} placeholder={i === 0 ? "e.g., Stabilize pain & inflammation" : i === 1 ? "e.g., Build $50K/mo baseline" : "e.g., Finish book draft"} className="w-full p-4 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-black" />
+            ))}
+            {goals.length < 10 && (
+              <button onClick={() => setGoals([...goals, ''])} className="w-full p-4 border-2 border-dashed border-gray-300 rounded-xl text-gray-600 hover:border-gray-400 flex items-center justify-center gap-2">
+                <Plus size={20} />Add another goal
+              </button>
+            )}
+          </div>
+          <p className="text-sm text-gray-500 italic">These aren't daily tasks. They're the areas of life you'd regret neglecting.</p>
+          {goals.filter(g => g.trim()).length >= 3 && <button onClick={() => setScreen('am-ritual')} className="w-full bg-black text-white py-4 rounded-xl font-semibold">Continue</button>}
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === 'am-ritual') {
+    return (
+      <div className="min-h-screen bg-white p-6">
+        <div className="max-w-md mx-auto space-y-6">
+          <h2 className="text-2xl font-bold">How do you want to start your mornings?</h2>
+          <div className="space-y-3">
+            {[{id: 'minimal', name: 'Minimal', desc: '2-3 min · Brief. Grounding. Get moving.'}, {id: 'balanced', name: 'Balanced', desc: '5-8 min · Structured. Present. Intentional.'}, {id: 'deep', name: 'Deep', desc: '10-15 min · Slow. Somatic. Fully here.'}].map(r => (
+              <button key={r.id} onClick={() => setAmRitual(r.id)} className={`w-full p-6 rounded-xl text-left ${amRitual === r.id ? 'bg-black text-white' : 'bg-gray-50 hover:bg-gray-100'}`}>
+                <div className="font-semibold">{r.name}</div>
+                <div className={`text-sm ${amRitual === r.id ? 'text-gray-300' : 'text-gray-600'}`}>{r.desc}</div>
+              </button>
+            ))}
+          </div>
+          <button onClick={() => setScreen('pm-ritual')} className="w-full bg-black text-white py-4 rounded-xl font-semibold">Continue</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === 'pm-ritual') {
+    return (
+      <div className="min-h-screen bg-white p-6">
+        <div className="max-w-md mx-auto space-y-6">
+          <h2 className="text-2xl font-bold">How do you want to close your evenings?</h2>
+          <div className="space-y-3">
+            {[{id: 'quick', name: 'Quick', desc: '2-3 min · Check-in. Wind down. Done.'}, {id: 'thorough', name: 'Thorough', desc: '5-8 min · Process. Release. Seal the day.'}, {id: 'restorative', name: 'Restorative', desc: '10-15 min · Slow closure. Deep rest prep.'}].map(r => (
+              <button key={r.id} onClick={() => setPmRitual(r.id)} className={`w-full p-6 rounded-xl text-left ${pmRitual === r.id ? 'bg-black text-white' : 'bg-gray-50 hover:bg-gray-100'}`}>
+                <div className="font-semibold">{r.name}</div>
+                <div className={`text-sm ${pmRitual === r.id ? 'text-gray-300' : 'text-gray-600'}`}>{r.desc}</div>
+              </button>
+            ))}
+          </div>
+          <button onClick={() => setScreen('name')} className="w-full bg-black text-white py-4 rounded-xl font-semibold">Continue</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === 'name') {
+    return (
+      <div className="min-h-screen bg-white p-6 flex items-center justify-center">
+        <div className="max-w-md w-full space-y-6">
+          <h2 className="text-2xl font-bold">What should we call you?</h2>
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" className="w-full p-4 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-black text-lg" autoFocus />
+          {name.trim() && <button onClick={() => setScreen('ready')} className="w-full bg-black text-white py-4 rounded-xl font-semibold">Continue</button>}
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === 'ready') {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-amber-100 to-white p-6 flex items-center justify-center">
+        <div className="max-w-md w-full space-y-8 text-center">
+          <div className="space-y-4">
+            <Sun size={48} className="mx-auto text-amber-600" />
+            <h2 className="text-2xl font-bold">Your first morning is ready.</h2>
+          </div>
+          <div className="text-gray-700 space-y-4">
+            <p>SOEHA will ask three questions, guide you through a 5-step morning design, then unlock your first focus.</p>
+            <p>This takes 3-5 minutes.</p>
+          </div>
+          <div className="space-y-3">
+            <button onClick={async () => { await saveUser({ name, season, amRitual, pmRitual, created: new Date().toISOString() }); await storage.set('goals', goals.filter(g => g.trim())); setScreen('am-greeting'); }} className="w-full bg-black text-white py-4 rounded-xl font-semibold">Start Morning</button>
+            <button onClick={async () => { await saveUser({ name, season, amRitual, pmRitual, created: new Date().toISOString() }); await storage.set('goals', goals.filter(g => g.trim())); setScreen('today'); }} className="w-full bg-gray-100 py-4 rounded-xl font-semibold">Later</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // MORNING FLOW
+  if (screen === 'am-greeting') {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-amber-100 to-white p-6 flex items-center justify-center">
+        <div className="max-w-md w-full space-y-8 text-center">
+          <div className="space-y-2">
+            <h1 className="text-3xl font-bold">Good morning, {user?.name || name}.</h1>
+            <p className="text-gray-600">Ready to design your day?</p>
+          </div>
+          <button onClick={() => setScreen('am-mood')} className="w-full bg-black text-white py-4 rounded-xl font-semibold">Start Check-In</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === 'am-mood') {
+    return (
+      <div className="min-h-screen bg-white p-6">
+        <div className="max-w-md mx-auto space-y-8">
+          <h2 className="text-2xl font-bold">How do you feel today?</h2>
+          <div className="space-y-3">
+            {['Drained', 'Okay', 'Solid', 'Energized'].map(m => (
+              <button key={m} onClick={() => { setAmCheckIn({...amCheckIn, mood: m.toLowerCase()}); setScreen('am-capacity'); }} className="w-full p-5 rounded-xl bg-gray-50 hover:bg-gray-100 text-left font-semibold">{m}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === 'am-capacity') {
+    return (
+      <div className="min-h-screen bg-white p-6">
+        <div className="max-w-md mx-auto space-y-8">
+          <h2 className="text-2xl font-bold">What's your capacity today?</h2>
+          <div className="space-y-3">
+            {[{val: 'low', name: 'Low', sub: 'Floor day'}, {val: 'medium', name: 'Medium', sub: 'Normal day'}, {val: 'high', name: 'High', sub: 'Stretch day possible'}].map(c => (
+              <button key={c.val} onClick={() => { setAmCheckIn({...amCheckIn, capacity: c.val}); setScreen('am-time'); }} className="w-full p-5 rounded-xl bg-gray-50 hover:bg-gray-100 text-left">
+                <div className="font-semibold">{c.name}</div>
+                <div className="text-sm text-gray-600">{c.sub}</div>
+              </button>
+            ))}
+          </div>
+          <p className="text-sm text-gray-500 text-center">This helps us match your plan to your reality.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === 'am-time') {
+    return (
+      <div className="min-h-screen bg-white p-6">
+        <div className="max-w-md mx-auto space-y-8">
+          <h2 className="text-2xl font-bold">How much time do you have this morning?</h2>
+          <div className="space-y-6">
+            <input type="range" min="2" max="30" value={amCheckIn.time} onChange={(e) => setAmCheckIn({...amCheckIn, time: parseInt(e.target.value)})} className="w-full" />
+            <div className="text-center text-3xl font-bold">{amCheckIn.time} minutes</div>
+            <div className="flex gap-2">
+              {[5, 10, 15, 20].map(t => (
+                <button key={t} onClick={() => setAmCheckIn({...amCheckIn, time: t})} className={`flex-1 py-2 rounded-lg ${amCheckIn.time === t ? 'bg-black text-white' : 'bg-gray-100 hover:bg-gray-200'}`}>{t}m</button>
+              ))}
+            </div>
+          </div>
+          <button onClick={() => { setCurrentStep(0); setScreen('am-steps'); }} className="w-full bg-black text-white py-4 rounded-xl font-semibold">Continue</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === 'am-steps') {
+    const step = AM_STEPS[currentStep];
+    const isLast = currentStep === AM_STEPS.length - 1;
+    
+    return (
+      <div className="min-h-screen bg-white p-6">
+        <div className="max-w-md mx-auto space-y-8">
+          <div className="text-sm text-gray-500 text-center">Step {currentStep + 1} of {AM_STEPS.length}</div>
+          <div className="space-y-4">
+            <h2 className="text-2xl font-bold text-center">{step.name}</h2>
+            <p className="text-center text-gray-600">{step.desc}</p>
+          </div>
+          
+          <div className={`bg-gray-50 p-6 rounded-xl ${showInstructions ? '' : 'cursor-pointer'}`} onClick={() => setShowInstructions(!showInstructions)}>
+            <div className="text-sm text-gray-700">{showInstructions ? step.instructions : 'Tap for instructions'}</div>
+          </div>
+          
+          <div className="space-y-3">
+            <button onClick={() => { if (isLast) { const f = generateFocus(); setFocus(f); setScreen('focus-unlock'); } else { setCurrentStep(currentStep + 1); setShowInstructions(false); } }} className="w-full bg-black text-white py-4 rounded-xl font-semibold">{isLast ? 'Complete Steps' : 'Next Step →'}</button>
+            <button onClick={() => { if (isLast) { const f = generateFocus(); setFocus(f); setScreen('focus-unlock'); } else { setCurrentStep(currentStep + 1); setShowInstructions(false); } }} className="w-full bg-gray-100 py-4 rounded-xl font-semibold">Skip This Step</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === 'focus-unlock') {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-amber-50 to-white p-6 flex items-center justify-center">
+        <div className="max-w-md w-full space-y-8">
+          <div className="text-center space-y-2">
+            <div className="text-sm text-gray-600 uppercase tracking-wide">Today's Focus</div>
+            <h2 className="text-2xl font-bold">{focus?.goal}</h2>
+          </div>
+          
+          <div className="bg-white p-6 rounded-xl shadow-sm space-y-4">
+            <p className="text-gray-800 font-medium">If you only did one thing today, it would be:</p>
+            <p className="text-lg">{focus?.action}</p>
+            <div className="pt-4 border-t border-gray-100 space-y-2 text-sm">
+              <div><span className="text-gray-600">Floor:</span> {focus?.floor}</div>
+              <div><span className="text-gray-600">Full:</span> {focus?.full}</div>
+            </div>
+          </div>
+          
+          <button onClick={async () => { await saveDaily({ amCompleted: true, amCheckIn, focus, amTimestamp: new Date().toISOString() }); setScreen('today'); }} className="w-full bg-black text-white py-4 rounded-xl font-semibold">Lock This Focus</button>
+        </div>
+      </div>
+    );
+  }
+
+  // TODAY VIEW
+  if (screen === 'today' || tab === 'today') {
+    const hour = new Date().getHours();
+    const showEveningPrompt = hour >= 18;
+    
+    return (
+      <div className="min-h-screen bg-white pb-20">
+        <div className="max-w-md mx-auto p-6 space-y-6">
+          {!focus && !dailyRecord?.focus && (
+            <div className="text-center py-12 space-y-4">
+              <Sun size={48} className="mx-auto text-amber-600" />
+              <div>
+                <h2 className="text-xl font-bold mb-2">Ready to start your day?</h2>
+                <button onClick={() => setScreen('am-greeting')} className="mt-4 bg-black text-white px-8 py-3 rounded-xl font-semibold">Start Morning Check-In</button>
+              </div>
+            </div>
+          )}
+          
+          {(focus || dailyRecord?.focus) && (
+            <div className="space-y-6">
+              <div className="bg-gray-50 p-6 rounded-xl space-y-4">
+                <div className="text-sm text-gray-600 uppercase tracking-wide">Today's Focus</div>
+                <h3 className="font-semibold">{(focus || dailyRecord?.focus)?.goal}</h3>
+                <p className="text-gray-700">{(focus || dailyRecord?.focus)?.action}</p>
+                <div className="text-sm text-gray-600">Floor: {(focus || dailyRecord?.focus)?.floor}</div>
+                
+                {!dailyRecord?.focusCompleted && (
+                  <button onClick={() => setScreen('mark-complete')} className="w-full bg-black text-white py-3 rounded-xl font-semibold mt-4">Mark Complete</button>
+                )}
+                
+                {dailyRecord?.focusCompleted && (
+                  <div className="flex items-center justify-center gap-2 text-green-700 bg-green-50 py-3 rounded-xl">
+                    <Check size={20} />
+                    <span className="font-semibold">Complete</span>
+                  </div>
+                )}
+              </div>
+              
+              <div className="flex gap-3">
+                <button onClick={() => setTab('offload')} className="flex-1 bg-gray-100 py-3 rounded-xl font-semibold hover:bg-gray-200">Offload</button>
+                <button onClick={() => setScreen('adjust')} className="flex-1 bg-gray-100 py-3 rounded-xl font-semibold hover:bg-gray-200">Adjust Day</button>
+              </div>
+              
+              {showEveningPrompt && !dailyRecord?.pmCompleted && (
+                <div className="bg-indigo-50 p-6 rounded-xl text-center space-y-4">
+                  <Moon size={32} className="mx-auto text-indigo-600" />
+                  <div>
+                    <p className="font-semibold mb-2">Ready to close the day?</p>
+                    <button onClick={() => setScreen('pm-greeting')} className="bg-indigo-600 text-white px-6 py-2 rounded-lg font-semibold">Start Evening →</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        
+        <BottomNav tab={tab} setTab={setTab} />
+      </div>
+    );
+  }
+
+  if (screen === 'mark-complete') {
+    return (
+      <div className="min-h-screen bg-white p-6">
+        <div className="max-w-md mx-auto space-y-8">
+          <h2 className="text-2xl font-bold">Did you complete the focus?</h2>
+          <div className="space-y-3">
+            {['Yes - Full version', 'Yes - Floor version', 'Partially', 'Not today'].map(opt => (
+              <button key={opt} onClick={async () => { 
+                if (opt === 'Not today' || opt === 'Partially') {
+                  setScreen('friction');
+                } else {
+                  await saveDaily({...dailyRecord, focusCompleted: opt, focusTimestamp: new Date().toISOString()});
+                  setScreen('complete-confirm');
+                }
+              }} className="w-full p-4 rounded-xl bg-gray-50 hover:bg-gray-100 text-left font-semibold">{opt}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === 'friction') {
+    return (
+      <div className="min-h-screen bg-white p-6">
+        <div className="max-w-md mx-auto space-y-8">
+          <h2 className="text-2xl font-bold">What got in the way?</h2>
+          <div className="space-y-3">
+            {['Time', 'Energy', 'Disruption', 'Emotional load', 'Other'].map(f => (
+              <button key={f} onClick={async () => { 
+                await saveDaily({...dailyRecord, focusCompleted: 'skipped', friction: f, focusTimestamp: new Date().toISOString()});
+                setScreen('friction-ack');
+              }} className="w-full p-4 rounded-xl bg-gray-50 hover:bg-gray-100 text-left font-semibold">{f}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === 'friction-ack') {
+    return (
+      <div className="min-h-screen bg-white p-6 flex items-center justify-center">
+        <div className="max-w-md w-full text-center space-y-6">
+          <p className="text-xl">Not today. That's okay.</p>
+          <p className="text-gray-600">This focus can carry to tomorrow, or we can choose something else in the morning.</p>
+          <button onClick={() => setScreen('today')} className="w-full bg-black text-white py-4 rounded-xl font-semibold">Okay</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === 'complete-confirm') {
+    return (
+      <div className="min-h-screen bg-white p-6 flex items-center justify-center">
+        <div className="max-w-md w-full text-center space-y-6">
+          <Check size={64} className="mx-auto text-green-600" />
+          <p className="text-2xl font-bold">Done. That was enough.</p>
+          <button onClick={() => setScreen('today')} className="w-full bg-black text-white py-4 rounded-xl font-semibold">Okay</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === 'adjust') {
+    return (
+      <div className="min-h-screen bg-white p-6">
+        <div className="max-w-md mx-auto space-y-8">
+          <div>
+            <button onClick={() => setScreen('today')} className="mb-4 text-gray-600">← Back</button>
+            <h2 className="text-2xl font-bold">Feeling overwhelmed?</h2>
+            <p className="text-gray-600 mt-2">We can shrink today's focus to protect your capacity.</p>
+          </div>
+          
+          <div className="bg-amber-50 p-6 rounded-xl space-y-4">
+            <p className="font-semibold">Current focus:</p>
+            <p className="text-gray-700">{focus?.action}</p>
+            <div className="pt-4 border-t border-amber-200">
+              <p className="font-semibold mb-2">Absolute minimum that still counts:</p>
+              <p className="text-gray-700">Spend just 5 minutes on this. That's it.</p>
+            </div>
+          </div>
+          
+          <button onClick={async () => { 
+            const shrunkFocus = {...focus, action: 'Spend just 5 minutes on: ' + focus.goal, floor: '5 minutes'};
+            setFocus(shrunkFocus);
+            await saveDaily({...dailyRecord, focus: shrunkFocus, adjusted: true});
+            setScreen('adjust-confirm');
+          }} className="w-full bg-black text-white py-4 rounded-xl font-semibold">Shrink to Minimum</button>
+          
+          <button onClick={() => setScreen('today')} className="w-full bg-gray-100 py-4 rounded-xl font-semibold">Keep Original</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === 'adjust-confirm') {
+    return (
+      <div className="min-h-screen bg-white p-6 flex items-center justify-center">
+        <div className="max-w-md w-full text-center space-y-6">
+          <p className="text-xl">Okay. Today became a capacity protection day.</p>
+          <p className="text-gray-600">Here's what still honors you: spend 5 minutes on your focus. Everything else is officially optional.</p>
+          <button onClick={() => setScreen('today')} className="w-full bg-black text-white py-4 rounded-xl font-semibold">Got it</button>
+        </div>
+      </div>
+    );
+  }
+
+  // EVENING FLOW
+  if (screen === 'pm-greeting') {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-indigo-100 to-white p-6 flex items-center justify-center">
+        <div className="max-w-md w-full space-y-8 text-center">
+          <div className="space-y-2">
+            <h1 className="text-3xl font-bold">Good evening, {user?.name}.</h1>
+            <p className="text-gray-600">Ready to close the day?</p>
+          </div>
+          <button onClick={() => setScreen('pm-complete')} className="w-full bg-indigo-600 text-white py-4 rounded-xl font-semibold">Start Close</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === 'pm-complete') {
+    return (
+      <div className="min-h-screen bg-white p-6">
+        <div className="max-w-md mx-auto space-y-8">
+          <div>
+            <h2 className="text-2xl font-bold mb-4">Did you complete today's focus?</h2>
+            <p className="text-gray-600 mb-6">{focus?.action}</p>
+          </div>
+          <div className="space-y-3">
+            {['Yes', 'Partially', 'Not today'].map(opt => (
+              <button key={opt} onClick={() => { 
+                setPmCheckIn({...pmCheckIn, completed: opt});
+                if (opt !== 'Yes') setScreen('pm-friction');
+                else setScreen('pm-feeling');
+              }} className="w-full p-4 rounded-xl bg-gray-50 hover:bg-gray-100 text-left font-semibold">{opt}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === 'pm-friction') {
+    return (
+      <div className="min-h-screen bg-white p-6">
+        <div className="max-w-md mx-auto space-y-8">
+          <h2 className="text-2xl font-bold">What got in the way?</h2>
+          <div className="space-y-3">
+            {['Time', 'Energy', 'Disruption', 'Emotional load', 'Other'].map(f => (
+              <button key={f} onClick={() => { 
+                setPmCheckIn({...pmCheckIn, friction: f});
+                setScreen('pm-feeling');
+              }} className="w-full p-4 rounded-xl bg-gray-50 hover:bg-gray-100 text-left font-semibold">{f}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === 'pm-feeling') {
+    return (
+      <div className="min-h-screen bg-white p-6">
+        <div className="max-w-md mx-auto space-y-8">
+          <h2 className="text-2xl font-bold">How did today feel overall?</h2>
+          <div className="space-y-3">
+            {['Calmer than expected', 'About right', 'More chaotic than expected'].map(f => (
+              <button key={f} onClick={() => { 
+                setPmCheckIn({...pmCheckIn, feeling: f});
+                setScreen('pm-steps');
+              }} className="w-full p-4 rounded-xl bg-gray-50 hover:bg-gray-100 text-left font-semibold">{f}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === 'pm-steps') {
+    const step = PM_STEPS[currentStep];
+    const isLast = currentStep === PM_STEPS.length - 1;
+    
+    return (
+      <div className="min-h-screen bg-white p-6">
+        <div className="max-w-md mx-auto space-y-8">
+          <div className="text-sm text-gray-500 text-center">Step {currentStep + 1} of {PM_STEPS.length}</div>
+          <div className="space-y-4">
+            <h2 className="text-2xl font-bold text-center">{step.name}</h2>
+            <p className="text-center text-gray-600">{step.desc}</p>
+          </div>
+          
+          <div className={`bg-gray-50 p-6 rounded-xl ${showInstructions ? '' : 'cursor-pointer'}`} onClick={() => setShowInstructions(!showInstructions)}>
+            <div className="text-sm text-gray-700">{showInstructions ? step.instructions : 'Tap for instructions'}</div>
+          </div>
+          
+          <div className="space-y-3">
+            <button onClick={() => { 
+              if (isLast) { 
+                setScreen('pm-sealed'); 
+              } else { 
+                setCurrentStep(currentStep + 1); 
+                setShowInstructions(false); 
+              } 
+            }} className="w-full bg-indigo-600 text-white py-4 rounded-xl font-semibold">{isLast ? 'Seal the Day' : 'Next Step →'}</button>
+            <button onClick={() => { 
+              if (isLast) { 
+                setScreen('pm-sealed'); 
+              } else { 
+                setCurrentStep(currentStep + 1); 
+                setShowInstructions(false); 
+              } 
+            }} className="w-full bg-gray-100 py-4 rounded-xl font-semibold">Skip This Step</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === 'pm-sealed') {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-indigo-900 to-black p-6 flex items-center justify-center text-white">
+        <div className="max-w-md w-full text-center space-y-8">
+          <div className="space-y-4">
+            <Moon size={64} className="mx-auto" />
+            <h1 className="text-3xl font-bold">The day is sealed.</h1>
+          </div>
+          
+          <div className="bg-white/10 p-6 rounded-xl text-left space-y-2">
+            <p className="text-sm text-white/60">Tomorrow is already protected.</p>
+            <p className="text-white">Your focus: {focus?.goal}</p>
+            <p className="text-sm text-white/60">(This can adjust in the morning if needed.)</p>
+          </div>
+          
+          <button onClick={async () => { 
+            await saveDaily({...dailyRecord, pmCompleted: true, pmCheckIn, pmTimestamp: new Date().toISOString()});
+            setTimeout(() => setScreen('sealed'), 2000);
+          }} className="w-full bg-white text-black py-4 rounded-xl font-semibold">Close Day</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === 'sealed') {
+    return (
+      <div className="min-h-screen bg-black p-6 flex items-center justify-center text-white">
+        <div className="max-w-md w-full text-center space-y-8">
+          <h1 className="text-4xl font-bold">Good night, {user?.name}.</h1>
+          <button onClick={() => setScreen('today')} className="text-white/60 text-sm">Return to Today</button>
+        </div>
+      </div>
+    );
+  }
+
+  // GOALS TAB
+  if (tab === 'goals') {
+    return (
+      <div className="min-h-screen bg-white pb-20">
+        <div className="max-w-md mx-auto p-6 space-y-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-2xl font-bold">Goals</h2>
+            {goals.filter(g => g.trim()).length < 10 && (
+              <button onClick={() => setScreen('add-goal')} className="text-black">
+                <Plus size={24} />
+              </button>
+            )}
+          </div>
+          
+          <div className="space-y-3">
+            {goals.filter(g => g.trim()).map((goal, idx) => (
+              <div key={idx} className="bg-gray-50 p-4 rounded-xl">
+                <div className="font-semibold mb-1">{goal}</div>
+                <div className="text-sm text-gray-600">Last action: {Math.floor(Math.random() * 7)} days ago</div>
+              </div>
+            ))}
+          </div>
+          
+          {goals.filter(g => g.trim()).length === 0 && (
+            <div className="text-center py-12 text-gray-500">
+              <p className="mb-4">No goals yet.</p>
+              <button onClick={() => setScreen('add-goal')} className="bg-black text-white px-6 py-3 rounded-xl font-semibold">Add Your First Goal</button>
+            </div>
+          )}
+        </div>
+        <BottomNav tab={tab} setTab={setTab} />
+      </div>
+    );
+  }
+
+  if (screen === 'add-goal') {
+    const [newGoal, setNewGoal] = useState('');
+    return (
+      <div className="min-h-screen bg-white p-6">
+        <div className="max-w-md mx-auto space-y-6">
+          <div>
+            <button onClick={() => { setTab('goals'); setScreen('today'); }} className="mb-4 text-gray-600">← Back</button>
+            <h2 className="text-2xl font-bold">Add a goal</h2>
+          </div>
+          
+          <input value={newGoal} onChange={(e) => setNewGoal(e.target.value)} placeholder="e.g., Finish book draft" className="w-full p-4 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-black" autoFocus />
+          
+          {newGoal.trim() && (
+            <button onClick={async () => { 
+              const updated = [...goals.filter(g => g.trim()), newGoal];
+              setGoals(updated);
+              await storage.set('goals', updated);
+              setTab('goals');
+              setScreen('today');
+            }} className="w-full bg-black text-white py-4 rounded-xl font-semibold">Add Goal</button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // OFFLOAD TAB
+  if (tab === 'offload') {
+    return (
+      <div className="min-h-screen bg-white pb-20">
+        <div className="max-w-md mx-auto p-6 space-y-6">
+          <h2 className="text-2xl font-bold">Offload</h2>
+          
+          <div className="text-center space-y-4">
+            <div className="bg-gray-50 p-8 rounded-xl">
+              <Mic size={48} className="mx-auto mb-4 text-gray-400" />
+              <p className="text-gray-600 mb-4">Capture what's in your head.</p>
+              <textarea value={offloadText} onChange={(e) => setOffloadText(e.target.value)} placeholder="Type what's on your mind..." className="w-full p-4 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-black min-h-24" />
+              {offloadText.trim() && (
+                <button onClick={() => addOffload(offloadText)} className="w-full mt-4 bg-black text-white py-3 rounded-xl font-semibold">Save</button>
+              )}
+            </div>
+          </div>
+          
+          {offloads.length > 0 && (
+            <div className="space-y-3">
+              <h3 className="font-semibold text-gray-600">Recent Offloads</h3>
+              {offloads.slice(0, 10).map(o => (
+                <div key={o.id} className="bg-gray-50 p-4 rounded-xl">
+                  <p className="text-gray-800">{o.text}</p>
+                  <p className="text-xs text-gray-500 mt-2">{new Date(o.timestamp).toLocaleString()}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <BottomNav tab={tab} setTab={setTab} />
+      </div>
+    );
+  }
+
+  // SETTINGS TAB
+  if (tab === 'settings') {
+    return (
+      <div className="min-h-screen bg-white pb-20">
+        <div className="max-w-md mx-auto p-6 space-y-6">
+          <h2 className="text-2xl font-bold">Settings</h2>
+          
+          <div className="space-y-4">
+            <div className="bg-gray-50 p-4 rounded-xl">
+              <div className="text-sm text-gray-600 mb-1">Name</div>
+              <div className="font-semibold">{user?.name}</div>
+            </div>
+            
+            <div className="bg-gray-50 p-4 rounded-xl">
+              <div className="text-sm text-gray-600 mb-1">Current Season</div>
+              <div className="font-semibold">{SEASONS.find(s => s.id === user?.season)?.name}</div>
+            </div>
+            
+            <div className="bg-gray-50 p-4 rounded-xl">
+              <div className="text-sm text-gray-600 mb-1">AM Ritual</div>
+              <div className="font-semibold capitalize">{user?.amRitual}</div>
+            </div>
+            
+            <div className="bg-gray-50 p-4 rounded-xl">
+              <div className="text-sm text-gray-600 mb-1">PM Ritual</div>
+              <div className="font-semibold capitalize">{user?.pmRitual}</div>
+            </div>
+          </div>
+          
+          <div className="pt-6">
+            <button onClick={async () => { 
+              if (confirm('Delete all data? This cannot be undone.')) {
+                await storage.delete('user');
+                await storage.delete('goals');
+                await storage.delete('offloads');
+                window.location.reload();
+              }
+            }} className="w-full bg-red-50 text-red-600 py-4 rounded-xl font-semibold">Delete All Data</button>
+          </div>
+          
+          <div className="text-center text-sm text-gray-500 pt-4">
+            <p>SOEHA v1.0 (Beta)</p>
+            <p className="mt-2">What comes after productivity.</p>
+          </div>
+        </div>
+        <BottomNav tab={tab} setTab={setTab} />
+      </div>
+    );
+  }
+
+  return null;
+}
+
+// ============================================================================
+// BOTTOM NAVIGATION
+// ============================================================================
+function BottomNav({ tab, setTab }) {
+  return (
+    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 safe-bottom">
+      <div className="max-w-md mx-auto flex">
+        <button onClick={() => setTab('today')} className={`flex-1 py-4 flex flex-col items-center justify-center ${tab === 'today' ? 'text-black' : 'text-gray-400'}`}>
+          <Sun size={24} />
+          <span className="text-xs mt-1">Today</span>
+        </button>
+        <button onClick={() => setTab('goals')} className={`flex-1 py-4 flex flex-col items-center justify-center ${tab === 'goals' ? 'text-black' : 'text-gray-400'}`}>
+          <Target size={24} />
+          <span className="text-xs mt-1">Goals</span>
+        </button>
+        <button onClick={() => setTab('offload')} className={`flex-1 py-4 flex flex-col items-center justify-center ${tab === 'offload' ? 'text-black' : 'text-gray-400'}`}>
+          <Mic size={24} />
+          <span className="text-xs mt-1">Offload</span>
+        </button>
+        <button onClick={() => setTab('settings')} className={`flex-1 py-4 flex flex-col items-center justify-center ${tab === 'settings' ? 'text-black' : 'text-gray-400'}`}>
+          <Menu size={24} />
+          <span className="text-xs mt-1">Settings</span>
+        </button>
+      </div>
+    </div>
+  );
+}
